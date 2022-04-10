@@ -1,13 +1,13 @@
 use egui::text::LayoutJob;
 
-/// View some code with syntax highlighting and selection.
+/// View some code with syntax highlighing and selection.
 pub fn code_view_ui(ui: &mut egui::Ui, mut code: &str) {
     let language = "rs";
     let theme = CodeTheme::from_memory(ui.ctx());
 
     let mut layouter = |ui: &egui::Ui, string: &str, _wrap_width: f32| {
         let layout_job = highlight(ui.ctx(), &theme, string, language);
-        // layout_job.wrap.max_width = wrap_width; // no wrapping
+        // layout_job.wrap_width = wrap_width; // no wrapping
         ui.fonts().layout_job(layout_job)
     };
 
@@ -23,13 +23,13 @@ pub fn code_view_ui(ui: &mut egui::Ui, mut code: &str) {
 
 /// Memoized Code highlighting
 pub fn highlight(ctx: &egui::Context, theme: &CodeTheme, code: &str, language: &str) -> LayoutJob {
-    impl egui::util::cache::ComputerMut<(&CodeTheme, &str, &str), LayoutJob> for Highlighter {
+    impl egui::util::cache::ComputerMut<(&CodeTheme, &str, &str), LayoutJob> for Highligher {
         fn compute(&mut self, (theme, code, lang): (&CodeTheme, &str, &str)) -> LayoutJob {
             self.highlight(theme, code, lang)
         }
     }
 
-    type HighlightCache<'a> = egui::util::cache::FrameCache<LayoutJob, Highlighter>;
+    type HighlightCache<'a> = egui::util::cache::FrameCache<LayoutJob, Highligher>;
 
     let mut memory = ctx.memory();
     let highlight_cache = memory.caches.cache::<HighlightCache<'_>>();
@@ -277,7 +277,7 @@ impl CodeTheme {
             ui.data().insert_persisted(selected_id, selected_tt);
 
             egui::Frame::group(ui.style())
-                .inner_margin(egui::Vec2::splat(2.0))
+                .margin(egui::Vec2::splat(2.0))
                 .show(ui, |ui| {
                     // ui.group(|ui| {
                     ui.style_mut().override_text_style = Some(egui::TextStyle::Small);
@@ -295,13 +295,13 @@ impl CodeTheme {
 // ----------------------------------------------------------------------------
 
 #[cfg(feature = "syntect")]
-struct Highlighter {
+struct Highligher {
     ps: syntect::parsing::SyntaxSet,
     ts: syntect::highlighting::ThemeSet,
 }
 
 #[cfg(feature = "syntect")]
-impl Default for Highlighter {
+impl Default for Highligher {
     fn default() -> Self {
         Self {
             ps: syntect::parsing::SyntaxSet::load_defaults_newlines(),
@@ -311,7 +311,7 @@ impl Default for Highlighter {
 }
 
 #[cfg(feature = "syntect")]
-impl Highlighter {
+impl Highligher {
     #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     fn highlight(&self, theme: &CodeTheme, code: &str, lang: &str) -> LayoutJob {
         self.highlight_impl(theme, code, lang).unwrap_or_else(|| {
@@ -392,10 +392,10 @@ fn as_byte_range(whole: &str, range: &str) -> std::ops::Range<usize> {
 
 #[cfg(not(feature = "syntect"))]
 #[derive(Default)]
-struct Highlighter {}
+struct Highligher {}
 
 #[cfg(not(feature = "syntect"))]
-impl Highlighter {
+impl Highligher {
     #[allow(clippy::unused_self, clippy::unnecessary_wraps)]
     fn highlight(&self, theme: &CodeTheme, mut text: &str, _language: &str) -> LayoutJob {
         // Extremely simple syntax highlighter for when we compile without syntect
@@ -404,7 +404,7 @@ impl Highlighter {
 
         while !text.is_empty() {
             if text.starts_with("//") {
-                let end = text.find('\n').unwrap_or(text.len());
+                let end = text.find('\n').unwrap_or_else(|| text.len());
                 job.append(&text[..end], 0.0, theme.formats[TokenType::Comment].clone());
                 text = &text[end..];
             } else if text.starts_with('"') {
@@ -412,7 +412,7 @@ impl Highlighter {
                     .find('"')
                     .map(|i| i + 2)
                     .or_else(|| text.find('\n'))
-                    .unwrap_or(text.len());
+                    .unwrap_or_else(|| text.len());
                 job.append(
                     &text[..end],
                     0.0,

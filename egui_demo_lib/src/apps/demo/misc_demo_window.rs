@@ -1,6 +1,5 @@
 use super::*;
-use crate::LOREM_IPSUM;
-use egui::{color::*, epaint::text::TextWrapping, *};
+use egui::{color::*, *};
 
 /// Showcase some ui code
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -8,17 +7,10 @@ use egui::{color::*, epaint::text::TextWrapping, *};
 pub struct MiscDemoWindow {
     num_columns: usize,
 
-    break_anywhere: bool,
-    max_rows: usize,
-    overflow_character: Option<char>,
-
     widgets: Widgets,
     colors: ColorWidgets,
     tree: Tree,
     box_painting: BoxPainting,
-
-    dummy_bool: bool,
-    dummy_usize: usize,
 }
 
 impl Default for MiscDemoWindow {
@@ -26,17 +18,10 @@ impl Default for MiscDemoWindow {
         MiscDemoWindow {
             num_columns: 2,
 
-            max_rows: 2,
-            break_anywhere: false,
-            overflow_character: Some('…'),
-
             widgets: Default::default(),
             colors: Default::default(),
             tree: Tree::demo(),
             box_painting: Default::default(),
-
-            dummy_bool: false,
-            dummy_usize: 0,
         }
     }
 }
@@ -68,12 +53,7 @@ impl View for MiscDemoWindow {
         CollapsingHeader::new("Text layout")
             .default_open(false)
             .show(ui, |ui| {
-                text_layout_ui(
-                    ui,
-                    &mut self.max_rows,
-                    &mut self.break_anywhere,
-                    &mut self.overflow_character,
-                );
+                text_layout_ui(ui);
             });
 
         CollapsingHeader::new("Colors")
@@ -85,28 +65,6 @@ impl View for MiscDemoWindow {
         CollapsingHeader::new("Tree")
             .default_open(false)
             .show(ui, |ui| self.tree.ui(ui));
-
-        CollapsingHeader::new("Checkboxes")
-            .default_open(false)
-            .show(ui, |ui| {
-                ui.label("Checkboxes with empty labels take up very little space:");
-                ui.spacing_mut().item_spacing = Vec2::ZERO;
-                ui.horizontal_wrapped(|ui| {
-                    for _ in 0..64 {
-                        ui.checkbox(&mut self.dummy_bool, "");
-                    }
-                });
-                ui.checkbox(&mut self.dummy_bool, "checkbox");
-
-                ui.label("Radiobuttons are similar:");
-                ui.spacing_mut().item_spacing = Vec2::ZERO;
-                ui.horizontal_wrapped(|ui| {
-                    for i in 0..64 {
-                        ui.radio_value(&mut self.dummy_usize, i, "");
-                    }
-                });
-                ui.radio_value(&mut self.dummy_usize, 64, "radio_value");
-            });
 
         ui.collapsing("Columns", |ui| {
             ui.add(Slider::new(&mut self.num_columns, 1..=10).text("Columns"));
@@ -443,12 +401,7 @@ impl SubTree {
 
 // ----------------------------------------------------------------------------
 
-fn text_layout_ui(
-    ui: &mut egui::Ui,
-    max_rows: &mut usize,
-    break_anywhere: &mut bool,
-    overflow_character: &mut Option<char>,
-) {
+fn text_layout_ui(ui: &mut egui::Ui) {
     use egui::text::LayoutJob;
 
     let mut job = LayoutJob::default();
@@ -601,30 +554,6 @@ fn text_layout_ui(
         },
     );
 
-    ui.label(job);
-
-    ui.separator();
-
-    ui.horizontal(|ui| {
-        ui.add(DragValue::new(max_rows));
-        ui.label("Max rows");
-    });
-    ui.checkbox(break_anywhere, "Break anywhere");
-    ui.horizontal(|ui| {
-        ui.selectable_value(overflow_character, None, "None");
-        ui.selectable_value(overflow_character, Some('…'), "…");
-        ui.selectable_value(overflow_character, Some('—'), "—");
-        ui.selectable_value(overflow_character, Some('-'), "  -  ");
-        ui.label("Overflow character");
-    });
-
-    let mut job = LayoutJob::single_section(LOREM_IPSUM.to_string(), TextFormat::default());
-    job.wrap = TextWrapping {
-        max_rows: *max_rows,
-        break_anywhere: *break_anywhere,
-        overflow_character: *overflow_character,
-        ..Default::default()
-    };
     ui.label(job);
 
     ui.vertical_centered(|ui| {

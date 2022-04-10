@@ -7,10 +7,8 @@ use epaint::*;
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[must_use = "You should call .show()"]
 pub struct Frame {
-    /// Margin within the painted frame.
-    pub inner_margin: Margin,
-    /// Margin outside the painted frame.
-    pub outer_margin: Margin,
+    /// On each side
+    pub margin: Margin,
     pub rounding: Rounding,
     pub shadow: Shadow,
     pub fill: Color32,
@@ -25,7 +23,7 @@ impl Frame {
     /// For when you want to group a few widgets together within a frame.
     pub fn group(style: &Style) -> Self {
         Self {
-            inner_margin: Margin::same(6.0), // symmetric looks best in corners when nesting
+            margin: Margin::same(6.0), // symmetric looks best in corners when nesting
             rounding: style.visuals.widgets.noninteractive.rounding,
             stroke: style.visuals.widgets.noninteractive.bg_stroke,
             ..Default::default()
@@ -34,7 +32,7 @@ impl Frame {
 
     pub(crate) fn side_top_panel(style: &Style) -> Self {
         Self {
-            inner_margin: Margin::symmetric(8.0, 2.0),
+            margin: Margin::symmetric(8.0, 2.0),
             rounding: Rounding::none(),
             fill: style.visuals.window_fill(),
             stroke: style.visuals.window_stroke(),
@@ -44,7 +42,7 @@ impl Frame {
 
     pub(crate) fn central_panel(style: &Style) -> Self {
         Self {
-            inner_margin: Margin::symmetric(8.0, 8.0),
+            margin: Margin::symmetric(8.0, 8.0),
             rounding: Rounding::none(),
             fill: style.visuals.window_fill(),
             stroke: Default::default(),
@@ -54,56 +52,42 @@ impl Frame {
 
     pub fn window(style: &Style) -> Self {
         Self {
-            inner_margin: style.spacing.window_margin,
+            margin: style.spacing.window_margin,
             rounding: style.visuals.window_rounding,
             shadow: style.visuals.window_shadow,
             fill: style.visuals.window_fill(),
             stroke: style.visuals.window_stroke(),
-            ..Default::default()
         }
     }
 
     pub fn menu(style: &Style) -> Self {
         Self {
-            inner_margin: Margin::same(1.0),
+            margin: Margin::same(1.0),
             rounding: style.visuals.widgets.noninteractive.rounding,
             shadow: style.visuals.popup_shadow,
             fill: style.visuals.window_fill(),
             stroke: style.visuals.window_stroke(),
-            ..Default::default()
         }
     }
 
     pub fn popup(style: &Style) -> Self {
         Self {
-            inner_margin: style.spacing.window_margin,
+            margin: style.spacing.window_margin,
             rounding: style.visuals.widgets.noninteractive.rounding,
             shadow: style.visuals.popup_shadow,
             fill: style.visuals.window_fill(),
             stroke: style.visuals.window_stroke(),
-            ..Default::default()
         }
     }
 
-    /// A canvas to draw on.
-    ///
-    /// In bright mode this will be very bright,
-    /// and in dark mode this will be very dark.
-    pub fn canvas(style: &Style) -> Self {
-        Self {
-            inner_margin: Margin::symmetric(10.0, 10.0),
-            rounding: style.visuals.widgets.noninteractive.rounding,
-            fill: style.visuals.extreme_bg_color,
-            stroke: style.visuals.window_stroke(),
-            ..Default::default()
-        }
-    }
-
-    /// A dark canvas to draw on.
+    /// dark canvas to draw on
     pub fn dark_canvas(style: &Style) -> Self {
         Self {
+            margin: Margin::symmetric(10.0, 10.0),
+            rounding: style.visuals.widgets.noninteractive.rounding,
             fill: Color32::from_black_alpha(250),
-            ..Self::canvas(style)
+            stroke: style.visuals.window_stroke(),
+            ..Default::default()
         }
     }
 }
@@ -124,21 +108,10 @@ impl Frame {
         self
     }
 
-    /// Margin within the painted frame.
-    pub fn inner_margin(mut self, inner_margin: impl Into<Margin>) -> Self {
-        self.inner_margin = inner_margin.into();
+    /// Margin on each side of the frame.
+    pub fn margin(mut self, margin: impl Into<Margin>) -> Self {
+        self.margin = margin.into();
         self
-    }
-
-    /// Margin outside the painted frame.
-    pub fn outer_margin(mut self, outer_margin: impl Into<Margin>) -> Self {
-        self.outer_margin = outer_margin.into();
-        self
-    }
-
-    #[deprecated = "Renamed inner_margin in egui 0.18"]
-    pub fn margin(self, margin: impl Into<Margin>) -> Self {
-        self.inner_margin(margin)
     }
 
     pub fn shadow(mut self, shadow: Shadow) -> Self {
@@ -166,8 +139,8 @@ impl Frame {
         let outer_rect_bounds = ui.available_rect_before_wrap();
 
         let mut inner_rect = outer_rect_bounds;
-        inner_rect.min += self.outer_margin.left_top() + self.inner_margin.left_top();
-        inner_rect.max -= self.outer_margin.right_bottom() + self.inner_margin.right_bottom();
+        inner_rect.min += Vec2::new(self.margin.left, self.margin.top);
+        inner_rect.max -= Vec2::new(self.margin.right, self.margin.bottom);
 
         // Make sure we don't shrink to the negative:
         inner_rect.max.x = inner_rect.max.x.max(inner_rect.min.x);
@@ -201,8 +174,7 @@ impl Frame {
 
     pub fn paint(&self, outer_rect: Rect) -> Shape {
         let Self {
-            inner_margin: _,
-            outer_margin: _,
+            margin: _,
             rounding,
             shadow,
             fill,
@@ -227,15 +199,15 @@ impl Frame {
 }
 
 impl Prepared {
-    fn paint_rect(&self) -> Rect {
+    pub fn outer_rect(&self) -> Rect {
         let mut rect = self.content_ui.min_rect();
-        rect.min -= self.frame.inner_margin.left_top();
-        rect.max += self.frame.inner_margin.right_bottom();
+        rect.min -= Vec2::new(self.frame.margin.left, self.frame.margin.top);
+        rect.max += Vec2::new(self.frame.margin.right, self.frame.margin.bottom);
         rect
     }
 
     pub fn end(self, ui: &mut Ui) -> Response {
-        let paint_rect = self.paint_rect();
+        let outer_rect = self.outer_rect();
 
         let Prepared {
             frame,
@@ -243,11 +215,11 @@ impl Prepared {
             ..
         } = self;
 
-        if ui.is_rect_visible(paint_rect) {
-            let shape = frame.paint(paint_rect);
+        if ui.is_rect_visible(outer_rect) {
+            let shape = frame.paint(outer_rect);
             ui.painter().set(where_to_put_background, shape);
         }
 
-        ui.allocate_rect(paint_rect, Sense::hover())
+        ui.allocate_rect(outer_rect, Sense::hover())
     }
 }

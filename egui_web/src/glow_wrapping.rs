@@ -1,4 +1,4 @@
-use egui::{ClippedPrimitive, Rgba};
+use egui::{ClippedMesh, Rgba};
 use egui_glow::glow;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
@@ -7,6 +7,7 @@ use web_sys::HtmlCanvasElement;
 use web_sys::{WebGl2RenderingContext, WebGlRenderingContext};
 
 pub(crate) struct WrappedGlowPainter {
+    pub(crate) glow_ctx: glow::Context,
     pub(crate) canvas: HtmlCanvasElement,
     pub(crate) canvas_id: String,
     pub(crate) painter: egui_glow::Painter,
@@ -16,14 +17,14 @@ impl WrappedGlowPainter {
     pub fn new(canvas_id: &str) -> Result<Self, String> {
         let canvas = crate::canvas_element_or_die(canvas_id);
 
-        let (gl, shader_prefix) = init_glow_context_from_canvas(&canvas)?;
-        let gl = std::rc::Rc::new(gl);
+        let (glow_ctx, shader_prefix) = init_glow_context_from_canvas(&canvas)?;
 
         let dimension = [canvas.width() as i32, canvas.height() as i32];
-        let painter = egui_glow::Painter::new(gl, Some(dimension), shader_prefix)
+        let painter = egui_glow::Painter::new(&glow_ctx, Some(dimension), shader_prefix)
             .map_err(|error| format!("Error starting glow painter: {}", error))?;
 
         Ok(Self {
+            glow_ctx,
             canvas,
             canvas_id: canvas_id.to_owned(),
             painter,
@@ -31,60 +32,53 @@ impl WrappedGlowPainter {
     }
 }
 
-impl WrappedGlowPainter {
-    pub fn gl(&self) -> &std::rc::Rc<glow::Context> {
-        self.painter.gl()
-    }
-
-    pub fn max_texture_side(&self) -> usize {
+impl crate::Painter for WrappedGlowPainter {
+    fn max_texture_side(&self) -> usize {
         self.painter.max_texture_side()
     }
 
-    pub fn canvas_id(&self) -> &str {
+    fn set_texture(&mut self, tex_id: egui::TextureId, delta: &egui::epaint::ImageDelta) {
+        self.painter.set_texture(&self.glow_ctx, tex_id, delta);
+    }
+
+    fn free_texture(&mut self, tex_id: egui::TextureId) {
+        self.painter.free_texture(&self.glow_ctx, tex_id);
+    }
+
+    fn debug_info(&self) -> String {
+        format!(
+            "Stored canvas size: {} x {}",
+            self.canvas.width(),
+            self.canvas.height(),
+        )
+    }
+
+    fn canvas_id(&self) -> &str {
         &self.canvas_id
     }
 
-    pub fn set_texture(&mut self, tex_id: egui::TextureId, delta: &egui::epaint::ImageDelta) {
-        self.painter.set_texture(tex_id, delta);
-    }
-
-    pub fn free_texture(&mut self, tex_id: egui::TextureId) {
-        self.painter.free_texture(tex_id);
-    }
-
-    pub fn clear(&self, clear_color: Rgba) {
+    fn clear(&mut self, clear_color: Rgba) {
         let canvas_dimension = [self.canvas.width(), self.canvas.height()];
-        egui_glow::painter::clear(self.painter.gl(), canvas_dimension, clear_color);
+        egui_glow::painter::clear(&self.glow_ctx, canvas_dimension, clear_color)
     }
 
-    pub fn paint_primitives(
+    fn paint_meshes(
         &mut self,
-        clipped_primitives: &[ClippedPrimitive],
+        clipped_meshes: Vec<ClippedMesh>,
         pixels_per_point: f32,
     ) -> Result<(), JsValue> {
         let canvas_dimension = [self.canvas.width(), self.canvas.height()];
-        self.painter
-            .paint_primitives(canvas_dimension, pixels_per_point, clipped_primitives);
+        self.painter.paint_meshes(
+            &self.glow_ctx,
+            canvas_dimension,
+            pixels_per_point,
+            clipped_meshes,
+        );
         Ok(())
     }
 
-    pub fn paint_and_update_textures(
-        &mut self,
-        clipped_primitives: &[egui::ClippedPrimitive],
-        pixels_per_point: f32,
-        textures_delta: &egui::TexturesDelta,
-    ) -> Result<(), JsValue> {
-        for (id, image_delta) in &textures_delta.set {
-            self.set_texture(*id, image_delta);
-        }
-
-        self.paint_primitives(clipped_primitives, pixels_per_point)?;
-
-        for &id in &textures_delta.free {
-            self.free_texture(id);
-        }
-
-        Ok(())
+    fn name(&self) -> &'static str {
+        "egui_web (glow)"
     }
 }
 
@@ -129,9 +123,9 @@ fn init_webgl1(canvas: &HtmlCanvasElement) -> Option<(glow::Context, &'static st
         ""
     };
 
-    let gl = glow::Context::from_webgl1_context(gl1_ctx);
+    let glow_ctx = glow::Context::from_webgl1_context(gl1_ctx);
 
-    Some((gl, shader_prefix))
+    Some((glow_ctx, shader_prefix))
 }
 
 fn init_webgl2(canvas: &HtmlCanvasElement) -> Option<(glow::Context, &'static str)> {
@@ -145,10 +139,10 @@ fn init_webgl2(canvas: &HtmlCanvasElement) -> Option<(glow::Context, &'static st
     let gl2_ctx = gl2_ctx
         .dyn_into::<web_sys::WebGl2RenderingContext>()
         .unwrap();
-    let gl = glow::Context::from_webgl2_context(gl2_ctx);
+    let glow_ctx = glow::Context::from_webgl2_context(gl2_ctx);
     let shader_prefix = "";
 
-    Some((gl, shader_prefix))
+    Some((glow_ctx, shader_prefix))
 }
 
 trait DummyWebGLConstructor {

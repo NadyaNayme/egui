@@ -1,21 +1,21 @@
 /// Handles interfacing either with the OS clipboard.
 /// If the "clipboard" feature is off it will instead simulate the clipboard locally.
 pub struct Clipboard {
-    #[cfg(feature = "arboard")]
-    arboard: Option<arboard::Clipboard>,
+    #[cfg(feature = "copypasta")]
+    copypasta: Option<copypasta::ClipboardContext>,
 
     /// Fallback manual clipboard.
-    #[cfg(not(feature = "arboard"))]
+    #[cfg(not(feature = "copypasta"))]
     clipboard: String,
 }
 
 impl Default for Clipboard {
     fn default() -> Self {
         Self {
-            #[cfg(feature = "arboard")]
-            arboard: init_arboard(),
+            #[cfg(feature = "copypasta")]
+            copypasta: init_copypasta(),
 
-            #[cfg(not(feature = "arboard"))]
+            #[cfg(not(feature = "copypasta"))]
             clipboard: String::default(),
         }
     }
@@ -23,10 +23,11 @@ impl Default for Clipboard {
 
 impl Clipboard {
     pub fn get(&mut self) -> Option<String> {
-        #[cfg(feature = "arboard")]
-        if let Some(clipboard) = &mut self.arboard {
-            match clipboard.get_text() {
-                Ok(text) => Some(text),
+        #[cfg(feature = "copypasta")]
+        if let Some(clipboard) = &mut self.copypasta {
+            use copypasta::ClipboardProvider as _;
+            match clipboard.get_contents() {
+                Ok(contents) => Some(contents),
                 Err(err) => {
                     tracing::error!("Paste error: {}", err);
                     None
@@ -36,28 +37,29 @@ impl Clipboard {
             None
         }
 
-        #[cfg(not(feature = "arboard"))]
+        #[cfg(not(feature = "copypasta"))]
         Some(self.clipboard.clone())
     }
 
     pub fn set(&mut self, text: String) {
-        #[cfg(feature = "arboard")]
-        if let Some(clipboard) = &mut self.arboard {
-            if let Err(err) = clipboard.set_text(text) {
+        #[cfg(feature = "copypasta")]
+        if let Some(clipboard) = &mut self.copypasta {
+            use copypasta::ClipboardProvider as _;
+            if let Err(err) = clipboard.set_contents(text) {
                 tracing::error!("Copy/Cut error: {}", err);
             }
         }
 
-        #[cfg(not(feature = "arboard"))]
+        #[cfg(not(feature = "copypasta"))]
         {
             self.clipboard = text;
         }
     }
 }
 
-#[cfg(feature = "arboard")]
-fn init_arboard() -> Option<arboard::Clipboard> {
-    match arboard::Clipboard::new() {
+#[cfg(feature = "copypasta")]
+fn init_copypasta() -> Option<copypasta::ClipboardContext> {
+    match copypasta::ClipboardContext::new() {
         Ok(clipboard) => Some(clipboard),
         Err(err) => {
             tracing::error!("Failed to initialize clipboard: {}", err);

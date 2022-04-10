@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-/// The output from a [`TextEdit`](crate::TextEdit).
+/// The output from a `TextEdit`.
 pub struct TextEditOutput {
     /// The interaction response.
     pub response: crate::Response,

@@ -1,18 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::egui;
-
-fn main() {
-    let options = eframe::NativeOptions {
-        drag_and_drop_support: true,
-        ..Default::default()
-    };
-    eframe::run_native(
-        "Native file dialogs and drag-and-drop files",
-        options,
-        Box::new(|_cc| Box::new(MyApp::default())),
-    );
-}
+use eframe::{egui, epi};
 
 #[derive(Default)]
 struct MyApp {
@@ -20,8 +8,12 @@ struct MyApp {
     picked_path: Option<String>,
 }
 
-impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+impl epi::App for MyApp {
+    fn name(&self) -> &str {
+        "Native file dialogs and drag-and-drop files"
+    }
+
+    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label("Drag-and-drop files onto the window!");
 
@@ -100,4 +92,12 @@ impl MyApp {
             self.dropped_files = ctx.input().raw.dropped_files.clone();
         }
     }
+}
+
+fn main() {
+    let options = eframe::NativeOptions {
+        drag_and_drop_support: true,
+        ..Default::default()
+    };
+    eframe::run_native(Box::new(MyApp::default()), options);
 }

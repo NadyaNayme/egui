@@ -1,4 +1,7 @@
-//! Demo app for egui
+// Forbid warnings in release builds:
+#![cfg_attr(not(debug_assertions), deny(warnings))]
+#![forbid(unsafe_code)]
+#![warn(clippy::all, rust_2018_idioms)]
 
 #[cfg(target_arch = "wasm32")]
 use eframe::wasm_bindgen::{self, prelude::*};
@@ -16,8 +19,6 @@ pub fn start(canvas_id: &str) -> Result<(), wasm_bindgen::JsValue> {
     // Redirect tracing to console.log and friends:
     tracing_wasm::set_as_global_default();
 
-    eframe::start_web(
-        canvas_id,
-        Box::new(|cc| Box::new(egui_demo_lib::WrapApp::new(cc))),
-    )
+    let app = egui_demo_lib::WrapApp::default();
+    eframe::start_web(canvas_id, Box::new(app))
 }

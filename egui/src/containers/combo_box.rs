@@ -1,9 +1,6 @@
 use crate::{style::WidgetVisuals, *};
 use epaint::Shape;
 
-/// A function that paints the [`ComboBox`] icon
-pub type IconPainter = Box<dyn FnOnce(&Ui, Rect, &WidgetVisuals, bool)>;
-
 /// A drop-down selection menu with a descriptive label.
 ///
 /// ```
@@ -27,18 +24,16 @@ pub struct ComboBox {
     label: Option<WidgetText>,
     selected_text: WidgetText,
     width: Option<f32>,
-    icon: Option<IconPainter>,
 }
 
 impl ComboBox {
-    /// Create new [`ComboBox`] with id and label
+    /// Create new `ComboBox` with id and label
     pub fn new(id_source: impl std::hash::Hash, label: impl Into<WidgetText>) -> Self {
         Self {
             id_source: Id::new(id_source),
             label: Some(label.into()),
             selected_text: Default::default(),
             width: None,
-            icon: None,
         }
     }
 
@@ -50,7 +45,6 @@ impl ComboBox {
             label: Some(label),
             selected_text: Default::default(),
             width: None,
-            icon: None,
         }
     }
 
@@ -61,7 +55,6 @@ impl ComboBox {
             label: Default::default(),
             selected_text: Default::default(),
             width: None,
-            icon: None,
         }
     }
 
@@ -74,41 +67,6 @@ impl ComboBox {
     /// What we show as the currently selected value
     pub fn selected_text(mut self, selected_text: impl Into<WidgetText>) -> Self {
         self.selected_text = selected_text.into();
-        self
-    }
-
-    /// Use the provided function to render a different [`ComboBox`] icon.
-    /// Defaults to a triangle that expands when the cursor is hovering over the [`ComboBox`].
-    ///
-    /// For example:
-    /// ```
-    /// # egui::__run_test_ui(|ui| {
-    /// # let text = "Selected text";
-    /// pub fn filled_triangle(
-    ///     ui: &egui::Ui,
-    ///     rect: egui::Rect,
-    ///     visuals: &egui::style::WidgetVisuals,
-    ///     _is_open: bool,
-    /// ) {
-    ///     let rect = egui::Rect::from_center_size(
-    ///         rect.center(),
-    ///         egui::Vec2::new(rect.width() * 0.6, rect.height() * 0.4),
-    ///     );
-    ///     ui.painter().add(egui::Shape::convex_polygon(
-    ///         vec![rect.left_top(), rect.right_top(), rect.center_bottom()],
-    ///         visuals.fg_stroke.color,
-    ///         visuals.fg_stroke,
-    ///     ));
-    /// }
-    ///
-    /// egui::ComboBox::from_id_source("my-combobox")
-    ///     .selected_text(text)
-    ///     .icon(filled_triangle)
-    ///     .show_ui(ui, |_ui| {});
-    /// # });
-    /// ```
-    pub fn icon(mut self, icon_fn: impl FnOnce(&Ui, Rect, &WidgetVisuals, bool) + 'static) -> Self {
-        self.icon = Some(Box::new(icon_fn));
         self
     }
 
@@ -133,7 +91,6 @@ impl ComboBox {
             label,
             selected_text,
             width,
-            icon,
         } = self;
 
         let button_id = ui.make_persistent_id(id_source);
@@ -142,7 +99,7 @@ impl ComboBox {
             if let Some(width) = width {
                 ui.spacing_mut().slider_width = width; // yes, this is ugly. Will remove later.
             }
-            let mut ir = combo_box_dyn(ui, button_id, selected_text, menu_contents, icon);
+            let mut ir = combo_box_dyn(ui, button_id, selected_text, menu_contents);
             if let Some(label) = label {
                 ir.response
                     .widget_info(|| WidgetInfo::labeled(WidgetType::ComboBox, label.text()));
@@ -208,7 +165,6 @@ fn combo_box_dyn<'c, R>(
     button_id: Id,
     selected_text: WidgetText,
     menu_contents: Box<dyn FnOnce(&mut Ui) -> R + 'c>,
-    icon: Option<IconPainter>,
 ) -> InnerResponse<Option<R>> {
     let popup_id = button_id.with("popup");
 
@@ -236,17 +192,7 @@ fn combo_box_dyn<'c, R>(
             } else {
                 ui.style().interact(&response)
             };
-
-            if let Some(icon) = icon {
-                icon(
-                    ui,
-                    icon_rect.expand(visuals.expansion),
-                    visuals,
-                    is_popup_open,
-                );
-            } else {
-                paint_default_icon(ui.painter(), icon_rect.expand(visuals.expansion), visuals);
-            }
+            paint_icon(ui.painter(), icon_rect.expand(visuals.expansion), visuals);
 
             let text_rect = Align2::LEFT_CENTER.align_size_within_rect(galley.size(), rect);
             galley.paint_with_visuals(ui.painter(), text_rect.min, visuals);
@@ -285,7 +231,7 @@ fn button_frame(
     outer_rect.set_height(outer_rect.height().at_least(interact_size.y));
 
     let inner_rect = outer_rect.shrink2(margin);
-    let mut content_ui = ui.child_ui(inner_rect, *ui.layout());
+    let mut content_ui = ui.child_ui(inner_rect, Layout::left_to_right());
     add_contents(&mut content_ui);
 
     let mut outer_rect = content_ui.min_rect().expand2(margin);
@@ -316,7 +262,7 @@ fn button_frame(
     response
 }
 
-fn paint_default_icon(painter: &Painter, rect: Rect, visuals: &WidgetVisuals) {
+fn paint_icon(painter: &Painter, rect: Rect, visuals: &WidgetVisuals) {
     let rect = Rect::from_center_size(
         rect.center(),
         vec2(rect.width() * 0.7, rect.height() * 0.45),

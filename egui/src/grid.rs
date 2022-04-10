@@ -80,8 +80,6 @@ impl GridLayout {
             "Grid not yet available for right-to-left layouts"
         );
 
-        ui.ctx().check_for_id_clash(id, initial_available, "Grid");
-
         Self {
             ctx: ui.ctx().clone(),
             style: ui.style().clone(),
@@ -127,7 +125,7 @@ impl GridLayout {
             // TODO: should probably heed `prev_state` here too
             self.max_cell_size.x
         } else {
-            // If we want to allow width-filling widgets like [`Separator`] in one of the first cells
+            // If we want to allow width-filling widgets like `Separator` in one of the first cells
             // then we need to make sure they don't spill out of the first cell:
             self.prev_state
                 .col_width(self.col)
@@ -327,7 +325,7 @@ impl Grid {
     }
 
     /// Change which row number the grid starts on.
-    /// This can be useful when you have a large [`Grid`] inside of [`ScrollArea::show_rows`].
+    /// This can be useful when you have a large `Grid` inside of [`ScrollArea::show_rows`].
     pub fn start_row(mut self, start_row: usize) -> Self {
         self.start_row = start_row;
         self

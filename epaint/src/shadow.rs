@@ -63,17 +63,11 @@ impl Shadow {
 
         use crate::tessellator::*;
         let rect = RectShape::filled(rect.expand(half_ext), ext_rounding, color);
-        let pixels_per_point = 1.0; // doesn't matter here
-        let font_tex_size = [1; 2]; // unused size we are not tessellating text.
-        let mut tessellator = Tessellator::new(
-            pixels_per_point,
-            TessellationOptions {
-                feathering: true,
-                feathering_size_in_pixels: extrusion * pixels_per_point,
-                ..Default::default()
-            },
-            font_tex_size,
-        );
+        let mut tessellator = Tessellator::from_options(TessellationOptions {
+            aa_size: extrusion,
+            anti_alias: true,
+            ..Default::default()
+        });
         let mut mesh = Mesh::default();
         tessellator.tessellate_rect(&rect, &mut mesh);
         mesh

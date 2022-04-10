@@ -1,7 +1,30 @@
-use crate::{glow_wrapping::WrappedGlowPainter, *};
+use crate::*;
 
 use egui::TexturesDelta;
 pub use egui::{pos2, Color32};
+
+// ----------------------------------------------------------------------------
+
+fn create_painter(canvas_id: &str) -> Result<Box<dyn Painter>, JsValue> {
+    // Glow takes precedence:
+    #[cfg(all(feature = "glow"))]
+    return Ok(Box::new(
+        crate::glow_wrapping::WrappedGlowPainter::new(canvas_id).map_err(JsValue::from)?,
+    ));
+
+    #[cfg(all(feature = "webgl", not(feature = "glow")))]
+    if let Ok(webgl2_painter) = webgl2::WebGl2Painter::new(canvas_id) {
+        tracing::debug!("Using WebGL2 backend");
+        Ok(Box::new(webgl2_painter))
+    } else {
+        tracing::debug!("Falling back to WebGL1 backend");
+        let webgl1_painter = webgl1::WebGlPainter::new(canvas_id)?;
+        Ok(Box::new(webgl1_painter))
+    }
+
+    #[cfg(all(not(feature = "webgl"), not(feature = "glow")))]
+    compile_error!("Either the 'glow' or 'webgl' feature of egui_web must be enabled!");
+}
 
 // ----------------------------------------------------------------------------
 
@@ -50,6 +73,12 @@ impl NeedRepaint {
     }
 }
 
+impl epi::backend::RepaintSignal for NeedRepaint {
+    fn request_repaint(&self) {
+        self.0.store(true, SeqCst);
+    }
+}
+
 // ----------------------------------------------------------------------------
 
 fn web_location() -> epi::Location {
@@ -66,7 +95,7 @@ fn web_location() -> epi::Location {
 
     let query_map = parse_query_map(&query)
         .iter()
-        .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+        .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect();
 
     epi::Location {
@@ -126,10 +155,11 @@ fn test_parse_query() {
 pub struct AppRunner {
     pub(crate) frame: epi::Frame,
     egui_ctx: egui::Context,
-    painter: WrappedGlowPainter,
+    painter: Box<dyn Painter>,
     pub(crate) input: WebInput,
     app: Box<dyn epi::App>,
     pub(crate) needs_repaint: std::sync::Arc<NeedRepaint>,
+    storage: LocalStorage,
     last_save_time: f64,
     screen_reader: crate::screen_reader::ScreenReader,
     pub(crate) text_cursor_pos: Option<egui::Pos2>,
@@ -138,14 +168,16 @@ pub struct AppRunner {
 }
 
 impl AppRunner {
-    pub fn new(canvas_id: &str, app_creator: epi::AppCreator) -> Result<Self, JsValue> {
-        let painter = WrappedGlowPainter::new(canvas_id).map_err(JsValue::from)?;
+    pub fn new(canvas_id: &str, app: Box<dyn epi::App>) -> Result<Self, JsValue> {
+        let painter = create_painter(canvas_id)?;
 
         let prefer_dark_mode = crate::prefer_dark_mode();
 
-        let frame = epi::Frame {
+        let needs_repaint: std::sync::Arc<NeedRepaint> = Default::default();
+
+        let frame = epi::Frame::new(epi::backend::FrameData {
             info: epi::IntegrationInfo {
-                name: "egui_web",
+                name: painter.name(),
                 web_info: Some(epi::WebInfo {
                     location: web_location(),
                 }),
@@ -154,21 +186,10 @@ impl AppRunner {
                 native_pixels_per_point: Some(native_pixels_per_point()),
             },
             output: Default::default(),
-            storage: Some(Box::new(LocalStorage::default())),
-            gl: painter.gl().clone(),
-        };
-
-        let needs_repaint: std::sync::Arc<NeedRepaint> = Default::default();
+            repaint_signal: needs_repaint.clone(),
+        });
 
         let egui_ctx = egui::Context::default();
-
-        {
-            let needs_repaint = needs_repaint.clone();
-            egui_ctx.set_request_repaint_callback(move || {
-                needs_repaint.0.store(true, SeqCst);
-            });
-        }
-
         load_memory(&egui_ctx);
         if prefer_dark_mode == Some(true) {
             egui_ctx.set_visuals(egui::Visuals::dark());
@@ -176,12 +197,7 @@ impl AppRunner {
             egui_ctx.set_visuals(egui::Visuals::light());
         }
 
-        let app = app_creator(&epi::CreationContext {
-            egui_ctx: egui_ctx.clone(),
-            integration_info: frame.info(),
-            storage: frame.storage(),
-            gl: painter.painter.gl().clone(),
-        });
+        let storage = LocalStorage::default();
 
         let mut runner = Self {
             frame,
@@ -190,6 +206,7 @@ impl AppRunner {
             input: Default::default(),
             app,
             needs_repaint,
+            storage,
             last_save_time: now_sec(),
             screen_reader: Default::default(),
             text_cursor_pos: None,
@@ -198,6 +215,12 @@ impl AppRunner {
         };
 
         runner.input.raw.max_texture_side = Some(runner.painter.max_texture_side());
+
+        {
+            runner
+                .app
+                .setup(&runner.egui_ctx, &runner.frame, Some(&runner.storage));
+        }
 
         Ok(runner)
     }
@@ -214,9 +237,7 @@ impl AppRunner {
             if self.app.persist_egui_memory() {
                 save_memory(&self.egui_ctx);
             }
-            if let Some(storage) = self.frame.storage_mut() {
-                self.app.save(storage);
-            }
+            self.app.save(&mut self.storage);
             self.last_save_time = now;
         }
     }
@@ -239,7 +260,7 @@ impl AppRunner {
     /// Returns `true` if egui requests a repaint.
     ///
     /// Call [`Self::paint`] later to paint
-    pub fn logic(&mut self) -> Result<(bool, Vec<egui::ClippedPrimitive>), JsValue> {
+    pub fn logic(&mut self) -> Result<(bool, Vec<egui::ClippedMesh>), JsValue> {
         let frame_start = now_sec();
 
         resize_canvas_to_screen_size(self.canvas_id(), self.app.max_size_points());
@@ -247,7 +268,7 @@ impl AppRunner {
         let raw_input = self.input.new_frame(canvas_size);
 
         let full_output = self.egui_ctx.run(raw_input, |egui_ctx| {
-            self.app.update(egui_ctx, &mut self.frame);
+            self.app.update(egui_ctx, &self.frame);
         });
         let egui::FullOutput {
             platform_output,
@@ -258,33 +279,32 @@ impl AppRunner {
 
         self.handle_platform_output(platform_output);
         self.textures_delta.append(textures_delta);
-        let clipped_primitives = self.egui_ctx.tessellate(shapes);
+        let clipped_meshes = self.egui_ctx.tessellate(shapes);
 
         {
             let app_output = self.frame.take_app_output();
             let epi::backend::AppOutput {
                 quit: _,         // Can't quit a web page
                 window_size: _,  // Can't resize a web page
+                always_on_top: _, // Web is always on top
                 window_title: _, // TODO: change title of window
                 decorated: _,    // Can't toggle decorations
                 drag_window: _,  // Can't be dragged
             } = app_output;
         }
 
-        self.frame.info.cpu_usage = Some((now_sec() - frame_start) as f32);
-        Ok((needs_repaint, clipped_primitives))
-    }
-
-    pub fn clear_color_buffer(&self) {
-        self.painter.clear(self.app.clear_color());
+        self.frame.lock().info.cpu_usage = Some((now_sec() - frame_start) as f32);
+        Ok((needs_repaint, clipped_meshes))
     }
 
     /// Paint the results of the last call to [`Self::logic`].
-    pub fn paint(&mut self, clipped_primitives: &[egui::ClippedPrimitive]) -> Result<(), JsValue> {
+    pub fn paint(&mut self, clipped_meshes: Vec<egui::ClippedMesh>) -> Result<(), JsValue> {
         let textures_delta = std::mem::take(&mut self.textures_delta);
 
+        self.painter.clear(self.app.clear_color());
+
         self.painter.paint_and_update_textures(
-            clipped_primitives,
+            clipped_meshes,
             self.egui_ctx.pixels_per_point(),
             &textures_delta,
         )?;
@@ -331,46 +351,20 @@ impl AppRunner {
 
 /// Install event listeners to register different input events
 /// and start running the given app.
-pub fn start(canvas_id: &str, app_creator: epi::AppCreator) -> Result<AppRunnerRef, JsValue> {
-    let mut runner = AppRunner::new(canvas_id, app_creator)?;
+pub fn start(canvas_id: &str, app: Box<dyn epi::App>) -> Result<AppRunnerRef, JsValue> {
+    let mut runner = AppRunner::new(canvas_id, app)?;
     runner.warm_up()?;
     start_runner(runner)
 }
 
 /// Install event listeners to register different input events
-/// and starts running the given [`AppRunner`].
+/// and starts running the given `AppRunner`.
 fn start_runner(app_runner: AppRunner) -> Result<AppRunnerRef, JsValue> {
-    let runner_container = AppRunnerContainer {
-        runner: Arc::new(Mutex::new(app_runner)),
-        panicked: Arc::new(AtomicBool::new(false)),
-    };
-
-    install_canvas_events(&runner_container)?;
-    install_document_events(&runner_container)?;
-    text_agent::install_text_agent(&runner_container)?;
-    repaint_every_ms(&runner_container, 1000)?; // just in case. TODO: make it a parameter
-
-    paint_and_schedule(&runner_container.runner, runner_container.panicked.clone())?;
-
-    // Disable all event handlers on panic
-    std::panic::set_hook(Box::new({
-        let previous_hook = std::panic::take_hook();
-
-        let panicked = runner_container.panicked;
-
-        move |panic_info| {
-            tracing::info_span!("egui_panic_handler").in_scope(|| {
-                tracing::trace!("setting panicked flag");
-
-                panicked.store(true, SeqCst);
-
-                tracing::info!("egui disabled all event handlers due to panic");
-            });
-
-            // Propagate panic info to the previously registered panic hook
-            previous_hook(panic_info);
-        }
-    }));
-
-    Ok(runner_container.runner)
+    let runner_ref = AppRunnerRef(Arc::new(Mutex::new(app_runner)));
+    install_canvas_events(&runner_ref)?;
+    install_document_events(&runner_ref)?;
+    text_agent::install_text_agent(&runner_ref)?;
+    repaint_every_ms(&runner_ref, 1000)?; // just in case. TODO: make it a parameter
+    paint_and_schedule(runner_ref.clone())?;
+    Ok(runner_ref)
 }

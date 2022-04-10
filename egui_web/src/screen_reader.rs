@@ -4,7 +4,6 @@ pub struct ScreenReader {
 }
 
 #[cfg(not(feature = "screen_reader"))]
-#[allow(clippy::derivable_impls)] // False positive
 impl Default for ScreenReader {
     fn default() -> Self {
         Self {}
@@ -30,7 +29,6 @@ impl Default for ScreenReader {
 
 impl ScreenReader {
     #[cfg(not(feature = "screen_reader"))]
-    #[allow(clippy::unused_self)]
     pub fn speak(&mut self, _text: &str) {}
 
     #[cfg(feature = "screen_reader")]

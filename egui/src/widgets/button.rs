@@ -67,7 +67,7 @@ impl Button {
         }
     }
 
-    /// If `true`, the text will wrap to stay within the max width of the [`Ui`].
+    /// If `true`, the text will wrap to stay within the max width of the `Ui`.
     ///
     /// By default [`Self::wrap`] will be true in vertical layouts
     /// and horizontal layouts with wrapping,
@@ -237,23 +237,15 @@ impl<'a> Widget for Checkbox<'a> {
 
         let spacing = &ui.spacing();
         let icon_width = spacing.icon_width;
-        let icon_spacing = spacing.icon_spacing;
+        let icon_spacing = ui.spacing().icon_spacing;
+        let button_padding = spacing.button_padding;
+        let total_extra = button_padding + vec2(icon_width + icon_spacing, 0.0) + button_padding;
 
-        let (text, mut desired_size) = if text.is_empty() {
-            (None, vec2(icon_width, 0.0))
-        } else {
-            let total_extra = vec2(icon_width + icon_spacing, 0.0);
+        let wrap_width = ui.available_width() - total_extra.x;
+        let text = text.into_galley(ui, None, wrap_width, TextStyle::Button);
 
-            let wrap_width = ui.available_width() - total_extra.x;
-            let text = text.into_galley(ui, None, wrap_width, TextStyle::Button);
-
-            let mut desired_size = total_extra + text.size();
-            desired_size = desired_size.at_least(spacing.interact_size);
-
-            (Some(text), desired_size)
-        };
-
-        desired_size = desired_size.at_least(Vec2::splat(spacing.interact_size.y));
+        let mut desired_size = total_extra + text.size();
+        desired_size = desired_size.at_least(spacing.interact_size);
         desired_size.y = desired_size.y.max(icon_width);
         let (rect, mut response) = ui.allocate_exact_size(desired_size, Sense::click());
 
@@ -261,17 +253,15 @@ impl<'a> Widget for Checkbox<'a> {
             *checked = !*checked;
             response.mark_changed();
         }
-        response.widget_info(|| {
-            WidgetInfo::selected(
-                WidgetType::Checkbox,
-                *checked,
-                text.as_ref().map_or("", |x| x.text()),
-            )
-        });
+        response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, *checked, text.text()));
 
         if ui.is_rect_visible(rect) {
             // let visuals = ui.style().interact_selectable(&response, *checked); // too colorful
             let visuals = ui.style().interact(&response);
+            let text_pos = pos2(
+                rect.min.x + button_padding.x + icon_width + icon_spacing,
+                rect.center().y - 0.5 * text.size().y,
+            );
             let (small_icon_rect, big_icon_rect) = ui.spacing().icon_rectangles(rect);
             ui.painter().add(epaint::RectShape {
                 rect: big_icon_rect.expand(visuals.expansion),
@@ -291,13 +281,8 @@ impl<'a> Widget for Checkbox<'a> {
                     visuals.fg_stroke,
                 ));
             }
-            if let Some(text) = text {
-                let text_pos = pos2(
-                    rect.min.x + icon_width + icon_spacing,
-                    rect.center().y - 0.5 * text.size().y,
-                );
-                text.paint_with_visuals(ui.painter(), text_pos, visuals);
-            }
+
+            text.paint_with_visuals(ui.painter(), text_pos, visuals);
         }
 
         response
@@ -344,37 +329,27 @@ impl Widget for RadioButton {
     fn ui(self, ui: &mut Ui) -> Response {
         let RadioButton { checked, text } = self;
 
-        let spacing = &ui.spacing();
-        let icon_width = spacing.icon_width;
-        let icon_spacing = spacing.icon_spacing;
+        let icon_width = ui.spacing().icon_width;
+        let icon_spacing = ui.spacing().icon_spacing;
+        let button_padding = ui.spacing().button_padding;
+        let total_extra = button_padding + vec2(icon_width + icon_spacing, 0.0) + button_padding;
 
-        let (text, mut desired_size) = if text.is_empty() {
-            (None, vec2(icon_width, 0.0))
-        } else {
-            let total_extra = vec2(icon_width + icon_spacing, 0.0);
+        let wrap_width = ui.available_width() - total_extra.x;
+        let text = text.into_galley(ui, None, wrap_width, TextStyle::Button);
 
-            let wrap_width = ui.available_width() - total_extra.x;
-            let text = text.into_galley(ui, None, wrap_width, TextStyle::Button);
-
-            let mut desired_size = total_extra + text.size();
-            desired_size = desired_size.at_least(spacing.interact_size);
-
-            (Some(text), desired_size)
-        };
-
-        desired_size = desired_size.at_least(Vec2::splat(spacing.interact_size.y));
+        let mut desired_size = total_extra + text.size();
+        desired_size = desired_size.at_least(ui.spacing().interact_size);
         desired_size.y = desired_size.y.max(icon_width);
         let (rect, response) = ui.allocate_exact_size(desired_size, Sense::click());
-
-        response.widget_info(|| {
-            WidgetInfo::selected(
-                WidgetType::RadioButton,
-                checked,
-                text.as_ref().map_or("", |x| x.text()),
-            )
-        });
+        response
+            .widget_info(|| WidgetInfo::selected(WidgetType::RadioButton, checked, text.text()));
 
         if ui.is_rect_visible(rect) {
+            let text_pos = pos2(
+                rect.min.x + button_padding.x + icon_width + icon_spacing,
+                rect.center().y - 0.5 * text.size().y,
+            );
+
             // let visuals = ui.style().interact_selectable(&response, checked); // too colorful
             let visuals = ui.style().interact(&response);
 
@@ -399,13 +374,7 @@ impl Widget for RadioButton {
                 });
             }
 
-            if let Some(text) = text {
-                let text_pos = pos2(
-                    rect.min.x + icon_width + icon_spacing,
-                    rect.center().y - 0.5 * text.size().y,
-                );
-                text.paint_with_visuals(ui.painter(), text_pos, visuals);
-            }
+            text.paint_with_visuals(ui.painter(), text_pos, visuals);
         }
 
         response

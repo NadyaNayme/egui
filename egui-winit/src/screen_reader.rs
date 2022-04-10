@@ -4,7 +4,6 @@ pub struct ScreenReader {
 }
 
 #[cfg(not(feature = "screen_reader"))]
-#[allow(clippy::derivable_impls)] // False positive
 impl Default for ScreenReader {
     fn default() -> Self {
         Self {}

@@ -1,6 +1,6 @@
 //! Simple plotting library.
 
-use std::{cell::Cell, ops::RangeInclusive, rc::Rc};
+use std::{cell::RefCell, ops::RangeInclusive, rc::Rc};
 
 use crate::*;
 use epaint::ahash::AHashSet;
@@ -8,14 +8,13 @@ use epaint::color::Hsva;
 use epaint::util::FloatOrd;
 use items::PlotItem;
 use legend::LegendWidget;
-use transform::ScreenTransform;
+use transform::{PlotBounds, ScreenTransform};
 
 pub use items::{
     Arrows, Bar, BarChart, BoxElem, BoxPlot, BoxSpread, HLine, Line, LineStyle, MarkerShape,
     Orientation, PlotImage, Points, Polygon, Text, VLine, Value, Values,
 };
 pub use legend::{Corner, Legend};
-pub use transform::PlotBounds;
 
 mod items;
 mod legend;
@@ -93,7 +92,7 @@ impl PlotMemory {
 pub struct LinkedAxisGroup {
     pub(crate) link_x: bool,
     pub(crate) link_y: bool,
-    pub(crate) bounds: Rc<Cell<Option<PlotBounds>>>,
+    pub(crate) bounds: Rc<RefCell<Option<PlotBounds>>>,
 }
 
 impl LinkedAxisGroup {
@@ -101,7 +100,7 @@ impl LinkedAxisGroup {
         Self {
             link_x,
             link_y,
-            bounds: Rc::new(Cell::new(None)),
+            bounds: Rc::new(RefCell::new(None)),
         }
     }
 
@@ -133,11 +132,11 @@ impl LinkedAxisGroup {
     }
 
     fn get(&self) -> Option<PlotBounds> {
-        self.bounds.get()
+        *self.bounds.borrow()
     }
 
     fn set(&self, bounds: PlotBounds) {
-        self.bounds.set(Some(bounds));
+        *self.bounds.borrow_mut() = Some(bounds);
     }
 }
 
@@ -145,7 +144,7 @@ impl LinkedAxisGroup {
 
 /// A 2D plot, e.g. a graph of a function.
 ///
-/// [`Plot`] supports multiple lines and points.
+/// `Plot` supports multiple lines and points.
 ///
 /// ```
 /// # egui::__run_test_ui(|ui| {
@@ -165,7 +164,6 @@ pub struct Plot {
     center_y_axis: bool,
     allow_zoom: bool,
     allow_drag: bool,
-    allow_scroll: bool,
     min_auto_bounds: PlotBounds,
     margin_fraction: Vec2,
     allow_boxed_zoom: bool,
@@ -189,7 +187,7 @@ pub struct Plot {
 }
 
 impl Plot {
-    /// Give a unique id for each plot within the same [`Ui`].
+    /// Give a unique id for each plot within the same `Ui`.
     pub fn new(id_source: impl std::hash::Hash) -> Self {
         Self {
             id_source: Id::new(id_source),
@@ -198,7 +196,6 @@ impl Plot {
             center_y_axis: false,
             allow_zoom: true,
             allow_drag: true,
-            allow_scroll: true,
             min_auto_bounds: PlotBounds::NOTHING,
             margin_fraction: Vec2::splat(0.05),
             allow_boxed_zoom: true,
@@ -290,20 +287,6 @@ impl Plot {
         self
     }
 
-    /// Whether to allow scrolling in the plot. Default: `true`.
-    pub fn allow_scroll(mut self, on: bool) -> Self {
-        self.allow_scroll = on;
-        self
-    }
-
-    /// Set the side margin as a fraction of the plot size.
-    ///
-    /// For instance, a value of `0.1` will add 10% space on both sides.
-    pub fn set_margin_fraction(mut self, margin_fraction: Vec2) -> Self {
-        self.margin_fraction = margin_fraction;
-        self
-    }
-
     /// Whether to allow zooming in the plot by dragging out a box with the secondary mouse button.
     ///
     /// Default: `true`.
@@ -312,7 +295,7 @@ impl Plot {
         self
     }
 
-    /// Config the button pointer to use for boxed zooming. Default: [`Secondary`](PointerButton::Secondary)
+    /// Config the button pointer to use for boxed zooming. Default: `Secondary`
     pub fn boxed_zoom_pointer_button(mut self, boxed_zoom_pointer_button: PointerButton) -> Self {
         self.boxed_zoom_pointer_button = boxed_zoom_pointer_button;
         self
@@ -337,7 +320,7 @@ impl Plot {
     /// Plot::new("my_plot").view_aspect(2.0)
     /// .label_formatter(|name, value| {
     ///     if !name.is_empty() {
-    ///         format!("{}: {:.*}%", name, 1, value.y)
+    ///         format!("{}: {:.*}%", name, 1, value.y).to_string()
     ///     } else {
     ///         "".to_string()
     ///     }
@@ -413,7 +396,7 @@ impl Plot {
         self
     }
 
-    /// Whether or not to show the background [`Rect`].
+    /// Whether or not to show the background `Rect`.
     /// Can be useful to disable if the plot is overlaid over existing content.
     /// Default: `true`.
     pub fn show_background(mut self, show: bool) -> Self {
@@ -443,7 +426,6 @@ impl Plot {
             center_x_axis,
             center_y_axis,
             allow_zoom,
-            allow_scroll,
             allow_drag,
             allow_boxed_zoom,
             boxed_zoom_pointer_button: boxed_zoom_pointer,
@@ -494,7 +476,6 @@ impl Plot {
 
         // Load or initialize the memory.
         let plot_id = ui.make_persistent_id(id_source);
-        ui.ctx().check_for_id_clash(plot_id, rect, "Plot");
         let mut memory = PlotMemory::load(ui.ctx(), plot_id).unwrap_or_else(|| PlotMemory {
             auto_bounds: !min_auto_bounds.is_valid(),
             hovered_entry: None,
@@ -671,8 +652,8 @@ impl Plot {
             }
         }
 
-        if let Some(hover_pos) = response.hover_pos() {
-            if allow_zoom {
+        if allow_zoom {
+            if let Some(hover_pos) = response.hover_pos() {
                 let zoom_factor = if data_aspect.is_some() {
                     Vec2::splat(ui.input().zoom_delta())
                 } else {
@@ -682,8 +663,7 @@ impl Plot {
                     transform.zoom(zoom_factor, hover_pos);
                     auto_bounds = false;
                 }
-            }
-            if allow_scroll {
+
                 let scroll_delta = ui.input().scroll_delta;
                 if scroll_delta != Vec2::ZERO {
                     transform.translate_bounds(-scroll_delta);
@@ -777,11 +757,6 @@ impl PlotUi {
     /// Returns `true` if the plot area is currently hovered.
     pub fn plot_hovered(&self) -> bool {
         self.response.hovered()
-    }
-
-    /// Returns `true` if the plot was clicked by the primary button.
-    pub fn plot_clicked(&self) -> bool {
-        self.response.clicked()
     }
 
     /// The pointer position in plot coordinates. Independent of whether the pointer is in the plot area.

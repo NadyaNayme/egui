@@ -12,26 +12,14 @@ pub struct Apps {
 }
 
 impl Apps {
-    fn iter_mut(&mut self) -> impl Iterator<Item = (&str, &str, &mut dyn epi::App)> {
+    fn iter_mut(&mut self) -> impl Iterator<Item = (&str, &mut dyn epi::App)> {
         vec![
-            ("✨ Demos", "demo", &mut self.demo as &mut dyn epi::App),
-            (
-                "🖹 EasyMark editor",
-                "easymark",
-                &mut self.easy_mark_editor as &mut dyn epi::App,
-            ),
+            ("demo", &mut self.demo as &mut dyn epi::App),
+            ("easymark", &mut self.easy_mark_editor as &mut dyn epi::App),
             #[cfg(feature = "http")]
-            ("⬇ HTTP", "http", &mut self.http as &mut dyn epi::App),
-            (
-                "🕑 Fractal Clock",
-                "clock",
-                &mut self.clock as &mut dyn epi::App,
-            ),
-            (
-                "🎨 Color test",
-                "colors",
-                &mut self.color_test as &mut dyn epi::App,
-            ),
+            ("http", &mut self.http as &mut dyn epi::App),
+            ("clock", &mut self.clock as &mut dyn epi::App),
+            ("colors", &mut self.color_test as &mut dyn epi::App),
         ]
         .into_iter()
     }
@@ -49,27 +37,37 @@ pub struct WrapApp {
     dropped_files: Vec<egui::DroppedFile>,
 }
 
-impl WrapApp {
-    pub fn new(_cc: &epi::CreationContext<'_>) -> Self {
-        #[cfg(feature = "persistence")]
-        if let Some(storage) = _cc.storage {
-            return epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
-        }
-        Self::default()
-    }
-}
-
 impl epi::App for WrapApp {
+    fn name(&self) -> &str {
+        "egui demo apps"
+    }
+
+    fn setup(
+        &mut self,
+        _ctx: &egui::Context,
+        _frame: &epi::Frame,
+        _storage: Option<&dyn epi::Storage>,
+    ) {
+        #[cfg(feature = "persistence")]
+        if let Some(storage) = _storage {
+            *self = epi::get_value(storage, epi::APP_KEY).unwrap_or_default();
+        }
+    }
+
     #[cfg(feature = "persistence")]
     fn save(&mut self, storage: &mut dyn epi::Storage) {
         epi::set_value(storage, epi::APP_KEY, self);
     }
 
-    fn clear_color(&self) -> egui::Rgba {
-        egui::Rgba::TRANSPARENT // we set a [`CentralPanel`] fill color in `demo_windows.rs`
+    fn max_size_points(&self) -> egui::Vec2 {
+        self.backend_panel.max_size_points_active
     }
 
-    fn update(&mut self, ctx: &egui::Context, frame: &mut epi::Frame) {
+    fn clear_color(&self) -> egui::Rgba {
+        egui::Rgba::TRANSPARENT // we set a `CentralPanel` fill color in `demo_windows.rs`
+    }
+
+    fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
         if let Some(web_info) = frame.info().web_info.as_ref() {
             if let Some(anchor) = web_info.location.hash.strip_prefix('#') {
                 self.selected_anchor = anchor.to_owned();
@@ -112,7 +110,7 @@ impl epi::App for WrapApp {
 
         let mut found_anchor = false;
 
-        for (_name, anchor, app) in self.apps.iter_mut() {
+        for (anchor, app) in self.apps.iter_mut() {
             if anchor == self.selected_anchor || ctx.memory().everything_is_visible() {
                 app.update(ctx, frame);
                 found_anchor = true;
@@ -130,7 +128,7 @@ impl epi::App for WrapApp {
 }
 
 impl WrapApp {
-    fn bar_contents(&mut self, ui: &mut egui::Ui, frame: &mut epi::Frame) {
+    fn bar_contents(&mut self, ui: &mut egui::Ui, frame: &epi::Frame) {
         // A menu-bar is a horizontal layout with some special styles applied.
         // egui::menu::bar(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
@@ -139,9 +137,9 @@ impl WrapApp {
             ui.checkbox(&mut self.backend_panel.open, "💻 Backend");
             ui.separator();
 
-            for (name, anchor, _app) in self.apps.iter_mut() {
+            for (anchor, app) in self.apps.iter_mut() {
                 if ui
-                    .selectable_label(self.selected_anchor == anchor, name)
+                    .selectable_label(self.selected_anchor == anchor, app.name())
                     .clicked()
                 {
                     self.selected_anchor = anchor.to_owned();

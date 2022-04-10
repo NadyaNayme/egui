@@ -4,19 +4,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use eframe::egui;
-
-fn main() {
-    let options = eframe::NativeOptions {
-        initial_window_size: Some(egui::vec2(1000.0, 700.0)),
-        ..Default::default()
-    };
-    eframe::run_native(
-        "svg example",
-        options,
-        Box::new(|_cc| Box::new(MyApp::default())),
-    );
-}
+use eframe::{egui, epi};
 
 struct MyApp {
     svg_image: egui_extras::RetainedImage,
@@ -34,8 +22,12 @@ impl Default for MyApp {
     }
 }
 
-impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+impl epi::App for MyApp {
+    fn name(&self) -> &str {
+        "svg example"
+    }
+
+    fn update(&mut self, ctx: &egui::Context, _frame: &epi::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("SVG example");
             ui.label("The SVG is rasterized and displayed as a texture.");
@@ -46,4 +38,12 @@ impl eframe::App for MyApp {
             self.svg_image.show_max_size(ui, max_size);
         });
     }
+}
+
+fn main() {
+    let options = eframe::NativeOptions {
+        initial_window_size: Some(egui::vec2(1000.0, 700.0)),
+        ..Default::default()
+    };
+    eframe::run_native(Box::new(MyApp::default()), options);
 }

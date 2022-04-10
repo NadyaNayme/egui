@@ -1,12 +1,10 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 script_path=$( cd "$(dirname "${BASH_SOURCE[0]}")" ; pwd -P )
 cd "$script_path/.."
 set -eux
 
 # Checks all tests, lints etc.
 # Basically does what the CI does.
-
-RUSTDOCFLAGS="-D warnings" # https://github.com/emilk/egui/pull/1454
 
 cargo check --workspace --all-targets
 cargo check --workspace --all-targets --all-features
@@ -22,22 +20,23 @@ cargo doc -p egui_web --target wasm32-unknown-unknown --lib --no-deps --all-feat
 cargo doc --document-private-items --no-deps --all-features
 
 (cd emath && cargo check --no-default-features)
-(cd epaint && cargo check --no-default-features)
-(cd epaint && cargo check --no-default-features --release)
-(cd egui && cargo check --no-default-features --features "serialize")
-(cd eframe && cargo check --no-default-features)
+(cd epaint && cargo check --no-default-features --features "single_threaded")
+(cd epaint && cargo check --no-default-features --features "multi_threaded")
+(cd epaint && cargo check --no-default-features --features "single_threaded" --release)
+(cd epaint && cargo check --no-default-features --features "multi_threaded" --release)
+(cd egui && cargo check --no-default-features --features "multi_threaded,serialize")
+(cd eframe && cargo check --no-default-features --features "egui_glow")
 (cd epi && cargo check --no-default-features)
 (cd egui_demo_lib && cargo check --no-default-features)
 (cd egui_extras && cargo check --no-default-features)
-(cd egui_web && cargo check --no-default-features)
-(cd egui-winit && cargo check --no-default-features)
+# (cd egui_web && cargo check --no-default-features) # we need to pick webgl or glow backend
+# (cd egui-winit && cargo check --no-default-features) # we don't pick singlethreaded or multithreaded
 (cd egui_glium && cargo check --no-default-features)
 (cd egui_glow && cargo check --no-default-features)
 
 
 (cd eframe && cargo check --all-features)
 (cd egui && cargo check --all-features)
-(cd egui_demo_app && cargo check --all-features)
 (cd egui_extras && cargo check --all-features)
 (cd egui_glium && cargo check --all-features)
 (cd egui_glow && cargo check --all-features)
@@ -65,5 +64,3 @@ cargo deny check
 
 # what compiles slowly?
 # cargo llvm-lines --lib -p egui | head -20
-
-echo "All checks passed."

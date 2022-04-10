@@ -4,7 +4,7 @@ version = "0.17.0"
 authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
 description = "Bindings for using egui natively using the glium library"
 edition = "2021"
-rust-version = "1.60"
+rust-version = "1.56"
 homepage = "https://github.com/emilk/egui/tree/master/egui_glium"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
@@ -38,7 +38,13 @@ default_fonts = ["egui/default_fonts"]
 links = ["egui-winit/links"]
 
 # enable persisting native window options and egui memory
-persistence = ["egui-winit/persistence", "egui/persistence"]
+persistence = [
+  "egui-winit/persistence",
+  "egui/persistence",
+  "epi", # also implied by the lines below, see https://github.com/rust-lang/cargo/issues/8832
+  "epi/file_storage",
+  "epi/persistence",
+]
 
 # experimental support for a screen reader
 screen_reader = ["egui-winit/screen_reader"]
@@ -46,9 +52,11 @@ screen_reader = ["egui-winit/screen_reader"]
 
 [dependencies]
 egui = { version = "0.17.0", path = "../egui", default-features = false, features = [
-  "bytemuck",
+  "convert_bytemuck",
+  "single_threaded",
 ] }
-egui-winit = { version = "0.17.0", path = "../egui-winit", default-features = false }
+egui-winit = { version = "0.17.0", path = "../egui-winit", default-features = false, features = ["epi"] }
+epi = { version = "0.17.0", path = "../epi", optional = true }
 
 ahash = "0.7"
 bytemuck = "1.7"
